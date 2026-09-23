@@ -1,0 +1,131 @@
+#include "Command_handler.hpp"
+#include "Channel.hpp"
+#include "command_excepts.hpp"
+#include "response.hpp"
+#include <cstdlib>
+
+ModeCommandHandler::ModeCommandHandler(Server &server, Client &client) : AChannelCommandHandler(server, client)
+{
+}
+
+ModeCommandHandler::~ModeCommandHandler()
+{
+}
+
+static bool parseLimit(const std::string &str, size_t &out)
+{
+    if (str.empty())
+        return false;
+
+    for (size_t i = 0; i < str.size(); i++)
+    {
+        if (!isdigit(str[i]))
+            return false;
+    }
+
+    out = static_cast<size_t>(atol(str.c_str()));
+    return true;
+}
+
+void ModeCommandHandler::execute(const std::vector<std::string> &params)
+{
+    if (params.size() < 2)
+        throw InvalidParametersException(_client.getNickname(), "MODE");   // CAMBIA
+
+    std::string channelName = params[0];
+    std::string modeString = params[1];
+
+    Channel *channel = _server.getChannelByName(channelName);
+    if (!channel)
+        throw InvalidChannelException(_client.getNickname(), channelName);   // CAMBIA
+
+
+    if (!channel->isMember(_client.getFd()))
+        throw NotInChannelException(_client.getNickname(), channelName);     // CAMBIA
+
+    if (!channel->isOperator(_client.getFd()))
+        throw NotPrivilegedException(_client.getNickname(), channelName);    // CAMBIA
+
+    size_t argIndex = 2;
+    bool sign = true;
+
+    for (size_t i = 0; i < modeString.size(); i++)
+    {
+        char c = modeString[i];
+
+        if (c == '+')
+        {
+            sign = true;
+            continue;
+        }
+        if (c == '-')
+        {
+            sign = false;
+            continue;
+        }
+
+        switch (c)
+        {
+            case 'i':
+                channel->setInviteOnly(sign);
+                break;
+
+            case 't':
+                channel->setTopicRestricted(sign);
+                break;
+
+            case 'k':
+                if (sign)
+                {
+                    if (argIndex >= params.size())
+                        throw InvalidParametersException(_client.getNickname(), "MODE");   // CAMBIA
+                    channel->setKey(params[argIndex++]);
+                }
+                else
+                    channel->setKey("");
+                break;
+
+            case 'o':
+            {
+                if (argIndex >= params.size())
+                    throw InvalidParametersException(_client.getNickname(), "MODE");
+
+                std::string targetNick = params[argIndex++];
+                Client *target = _server.searchNickname(targetNick);
+
+                if (!target)
+                    throw NoSuchNickException(_client.getNickname(), targetNick);
+
+                if (!channel->isMember(target->getFd()))
+                    throw TargetNotInChannelException(_client.getNickname(), targetNick, channelName);
+
+                channel->setOperator(target->getFd(), sign);
+                break;
+            }
+
+            case 'l':
+                if (sign)
+                {
+                    if (argIndex >= params.size())
+                        throw InvalidParametersException(_client.getNickname(), "MODE");   // CAMBIA
+
+                    size_t limit;
+                    if (!parseLimit(params[argIndex++], limit))
+                        throw InvalidModeException(_client.getNickname(), "l");   // CAMBIA
+                    channel->setUserLimit(limit);
+                }
+                else
+                    channel->setUserLimit(0);
+                break;
+
+            default:
+                throw InvalidModeException(_client.getNickname(), std::string(1, c));   // CAMBIA
+        }
+    }
+
+    std::string argsJoined;
+    for (size_t i = 2; i < params.size(); i++)
+        argsJoined += (i > 2 ? " " : "") + params[i];
+
+    _client.write(MSG_MODE(_client.get_prefix(), channelName, modeString, argsJoined));   // SE QUEDA: MSG_*
+}
