@@ -6,6 +6,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <sstream>
+#include <ctime>
+#include <csignal>
 
 Bot::Bot(const std::string &host, int port, const std::string &password)
     : _host(host), _port(port), _password(password), _nickname("IRCBot"), _socketFd(-1) {}
@@ -50,7 +52,10 @@ void Bot::handleCommand(const std::string &sender, const std::string &target, co
 
     if (message.find("!time") == 0) {
         time_t now = time(NULL);
-        response = "PRIVMSG " + replyTarget + " :Current server time is: " + std::string(ctime(&now));
+        std::string timeStr = ctime(&now);
+        if (!timeStr.empty() && timeStr[timeStr.size() - 1] == '\n')
+            timeStr.erase(timeStr.size() - 1);
+        response = "PRIVMSG " + replyTarget + " :Current server time is: " + timeStr + "\r\n";
     } else if (message.find("!ping") == 0) {
         response = "PRIVMSG " + replyTarget + " :PONG!\r\n";
     } else if (message.find("!help") == 0) {
@@ -71,35 +76,68 @@ void Bot::listenAndRespond() {
         if (bytesReceived <= 0) break;
 
         buffer[bytesReceived] = '\0';
-        incomingData += buffer;
+        incomingData.append(buffer, bytesReceived);
 
         size_t pos;
-        while ((pos = incomingData.find("\r\n")) != std::string::npos) {
+        while ((pos = incomingData.find('\n')) != std::string::npos) {
             std::string line = incomingData.substr(0, pos);
-            incomingData.erase(0, pos + 2);
+            incomingData.erase(0, pos + 1);
 
-            // Responder a PINGs del servidor para mantener la conexión
-            if (line.find("PING") == 0) {
-                std::string pong = "PONG " + line.substr(5) + "\r\n";
-                send(_socketFd, pong.c_str(), pong.size(), 0);
+            if (!line.empty() && line[line.size() - 1] == '\r')
+                line.erase(line.size() - 1);
+
+            if (line.empty())
+                continue;
+
+            // Responder PING del servidor
+            size_t pingPos = line.find("PING");
+            if (pingPos != std::string::npos) {
+                std::string pingParam = line.substr(pingPos + 4);
+                size_t start = pingParam.find_first_not_of(" ");
+                if (start != std::string::npos) {
+                    pingParam = pingParam.substr(start);
+                    std::string pong = "PONG " + pingParam + "\r\n";
+                    send(_socketFd, pong.c_str(), pong.size(), 0);
+                }
                 continue;
             }
 
-            // Parsear PRIVMSG
-            if (line.find("PRIVMSG") != std::string::npos) {
-                size_t nickEnd = line.find('!');
-                if (nickEnd != std::string::npos && line[0] == ':') {
-                    std::string sender = line.substr(1, nickEnd - 1);
-                    size_t msgStart = line.find("PRIVMSG ");
-                    if (msgStart != std::string::npos) {
-                        std::string rest = line.substr(msgStart + 8);
-                        size_t targetEnd = rest.find(" ");
-                        std::string target = rest.substr(0, targetEnd);
-                        size_t textStart = rest.find(" :");
-                        if (textStart != std::string::npos) {
-                            std::string msg = rest.substr(textStart + 2);
-                            handleCommand(sender, target, msg);
-                        }
+            // Responder a INVITE
+            if (line.find(" INVITE ") != std::string::npos) {
+                size_t invitePos = line.find(" INVITE ");
+                std::string rest = line.substr(invitePos + 8);
+                size_t start = rest.find_first_not_of(" ");
+                if (start != std::string::npos) {
+                    rest = rest.substr(start);
+                    size_t spacePos = rest.find(' ');
+                    if (spacePos != std::string::npos) {
+                        std::string channel = rest.substr(spacePos + 1);
+                        if (!channel.empty() && channel[0] == ':')
+                            channel = channel.substr(1);
+                        std::string joinCmd = "JOIN " + channel + "\r\n";
+                        send(_socketFd, joinCmd.c_str(), joinCmd.size(), 0);
+                    }
+                }
+            }
+
+            // Parser para PRIVMSG
+            size_t privmsgPos = line.find(" PRIVMSG ");
+            if (privmsgPos != std::string::npos) {
+                std::string sender = "user";
+                if (line[0] == ':') {
+                    size_t exMark = line.find('!');
+                    if (exMark != std::string::npos && exMark < privmsgPos)
+                        sender = line.substr(1, exMark - 1);
+                }
+
+                std::string rest = line.substr(privmsgPos + 9);
+                size_t spacePos = rest.find(' ');
+                if (spacePos != std::string::npos) {
+                    std::string target = rest.substr(0, spacePos);
+                    size_t colonPos = rest.find(':', spacePos);
+                    if (colonPos != std::string::npos) {
+                        std::string msg = rest.substr(colonPos + 1);
+                        handleCommand(sender, target, msg);
                     }
                 }
             }
@@ -114,6 +152,7 @@ void Bot::run() {
 }
 
 int main(int argc, char **argv) {
+    signal(SIGPIPE, SIG_IGN);
     if (argc != 4) {
         std::cerr << "Usage: ./ircbot <host> <port> <password>" << std::endl;
         return 1;
