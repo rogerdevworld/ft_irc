@@ -4,7 +4,6 @@ BOT_NAME    = ircbot
 CC          = c++
 CFLAGS      = -Wall -Wextra -Werror -std=c++98 -Iinc -MMD -MP
 
-# Fuentes del servidor (EXCLUYE src/Bot.cpp)
 SRCS        = src/main.cpp \
               src/Server.cpp \
               src/Client.cpp \
@@ -29,7 +28,6 @@ SRCS        = src/main.cpp \
               src/command_handler/Who.cpp \
               src/command_handler/Whois.cpp
 
-# Fuentes del bot
 BOT_SRCS    = src/Bot.cpp
 
 OBJS        = $(SRCS:src/%.cpp=obj/%.o)
