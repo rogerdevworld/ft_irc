@@ -8,9 +8,13 @@
 #include <sstream>
 #include <ctime>
 #include <csignal>
+#include <vector>
 
 Bot::Bot(const std::string &host, int port, const std::string &password)
-    : _host(host), _port(port), _password(password), _nickname("IRCBot"), _socketFd(-1) {}
+    : _host(host), _port(port), _password(password), _nickname("IRCBot"), _socketFd(-1) {
+    // Inicializar la semilla para números aleatorios
+    std::srand(std::time(NULL));
+}
 
 Bot::~Bot() {
     if (_socketFd != -1)
@@ -55,11 +59,44 @@ void Bot::handleCommand(const std::string &sender, const std::string &target, co
         std::string timeStr = ctime(&now);
         if (!timeStr.empty() && timeStr[timeStr.size() - 1] == '\n')
             timeStr.erase(timeStr.size() - 1);
-        response = "PRIVMSG " + replyTarget + " :Current server time is: " + timeStr + "\r\n";
+        response = "PRIVMSG " + replyTarget + " :" + sender + ", current server time is: " + timeStr + "\r\n";
+    
     } else if (message.find("!ping") == 0) {
-        response = "PRIVMSG " + replyTarget + " :PONG!\r\n";
+        response = "PRIVMSG " + replyTarget + " :" + sender + ", PONG! 🏓\r\n";
+    
+    } else if (message.find("!hello") == 0) {
+        response = "PRIVMSG " + replyTarget + " :¡Hola " + sender + "! ¿En qué te puedo ayudar hoy? 👋\r\n";
+    
+    } else if (message.find("!roll") == 0) {
+        int roll = (std::rand() % 6) + 1;
+        std::stringstream ss;
+        ss << "PRIVMSG " << replyTarget << " :🎲 " << sender << " ha lanzado el dado y ha salido: " << roll << "\r\n";
+        response = ss.str();
+    
+    } else if (message.find("!flip") == 0) {
+        std::string result = (std::rand() % 2 == 0) ? "Cara 🪙" : "Cruz 🪙";
+        response = "PRIVMSG " + replyTarget + " :" + sender + " lanzó una moneda y salió: " + result + "\r\n";
+    
+    } else if (message.find("!joke") == 0) {
+        std::vector<std::string> jokes;
+        jokes.push_back("¿Qué hace una abeja en el gimnasio? ¡Zumba!");
+        jokes.push_back("— ¿Qué tal el examen? — Como en casa, en nada me quedé en blanco.");
+        jokes.push_back("— ¡Papá, papá! ¿Qué se siente tener un hijo tan guapo? — No lo sé, hijo, pregúntale a tu abuelo.");
+        jokes.push_back("¿Por qué los programadores prefieren el invierno? Porque no tienen tantos bugs en el calor.");
+        
+        int idx = std::rand() % jokes.size();
+        response = "PRIVMSG " + replyTarget + " :" + sender + ", aquí tienes un chiste: " + jokes[idx] + "\r\n";
+    
+    } else if (message.find("!say ") == 0) {
+        std::string textToSay = message.substr(5);
+        if (!textToSay.empty()) {
+            response = "PRIVMSG " + replyTarget + " :" + sender + " dice: " + textToSay + "\r\n";
+        } else {
+            response = "PRIVMSG " + replyTarget + " :" + sender + ", debes escribir algo después de !say.\r\n";
+        }
+    
     } else if (message.find("!help") == 0) {
-        response = "PRIVMSG " + replyTarget + " :Available commands: !time, !ping, !help\r\n";
+        response = "PRIVMSG " + replyTarget + " :Comandos disponibles: !hello, !time, !ping, !roll, !flip, !joke, !say <texto>, !help\r\n";
     }
 
     if (!response.empty()) {

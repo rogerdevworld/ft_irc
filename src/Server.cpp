@@ -1,9 +1,9 @@
-#include <sys/socket.h>   //-> for socket()
-#include <sys/types.h>    //-> for socket()
-#include <netinet/in.h>   //-> for sockaddr_in
+#include <sys/socket.h>    //-> for socket()
+#include <sys/types.h>     //-> for socket()
+#include <netinet/in.h>    //-> for sockaddr_in
 #include <fcntl.h>         //-> for fcntl()
 #include <unistd.h>        //-> for close()
-#include <arpa/inet.h>    //-> for inet_ntoa()
+#include <arpa/inet.h>     //-> for inet_ntoa()
 #include <poll.h>          //-> for poll()
 #include <csignal>         //-> for signal()
 #include <cstring>         //-> for memset()
@@ -253,6 +253,15 @@ void Server::receiveNewData(int fd)
 
         log(EVENT, "Client <" + ::toStr(fd) + "> (" + client->getNickname() + ") -> " + command.name);
 
+        // BONUS: Detección y log automático de transferencia de archivos por DCC SEND
+        if (command.name == "PRIVMSG" && command.params.size() >= 2)
+        {
+            if (command.params[1].find("DCC SEND") != std::string::npos || command.params[1].find("\001DCC SEND") != std::string::npos)
+            {
+                log(EVENT, "[BONUS DCC] Transferencia de archivo solicitada por " + client->getNickname() + " hacia " + command.params[0]);
+            }
+        }
+
         try
         {
             AbstractCommandHandler::executeCommand(*this, *client, command.name, command.params);
@@ -360,7 +369,6 @@ void Server::removeChannel(const std::string &channelName)
 
 void Server::clearClient(int fd)
 {
-    //removeClientFromChannels(*getClientByFd(fd), "Connection closed");
     for (size_t i = 0; i < fds.size(); i++)
     {
         if (fds[i].fd == fd)

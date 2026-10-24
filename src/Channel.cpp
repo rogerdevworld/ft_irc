@@ -47,10 +47,24 @@ void Channel::addMember(Client *client, bool asOperator)
         members[client->getFd()] = asOperator;
 }
 
-void Channel::removeMember(int fd)
+void Channel::removeMember(int clientFd)
 {
-    members.erase(fd);
-    invited.erase(fd); // Limpia invitaciones pendientes al salir
+    bool wasOperator = isOperator(clientFd);
+    removeUserFromLists(clientFd); 
+
+    if (wasOperator && operators.empty() && !members.empty())
+    {
+        int oldestClientFd = getOldestMemberFd(); 
+        if (oldestClientFd != -1)
+        {
+            operators.insert(oldestClientFd);
+            Client *newAdmin = serverRef->getClientByFd(oldestClientFd);
+            if (newAdmin)
+            {
+                std::string notice = ":" + serverName + " MODE " + name + " +o " + newAdmin->getNickname() + "\r\n";
+                broadcastToAll(notice);
+        }
+    }
 }
 
 bool Channel::isMember(int fd) const
