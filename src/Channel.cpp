@@ -1,0 +1,219 @@
+#include "Channel.hpp"
+
+Channel::Channel(const std::string &name, const std::string &key)
+    : name(name), key(key), inviteOnly(false), topicRestricted(false), userLimit(0)
+{
+}
+
+Channel::Channel(const Channel &other)
+    : name(other.name), topic(other.topic), key(other.key),
+      inviteOnly(other.inviteOnly), topicRestricted(other.topicRestricted),
+      userLimit(other.userLimit), members(other.members), invited(other.invited)
+{
+}
+
+Channel &Channel::operator=(const Channel &other)
+{
+    if (this != &other)
+    {
+        name = other.name;
+        topic = other.topic;
+        key = other.key;
+        inviteOnly = other.inviteOnly;
+        topicRestricted = other.topicRestricted;
+        userLimit = other.userLimit;
+        members = other.members;
+        invited = other.invited;
+    }
+    return *this;
+}
+
+Channel::~Channel() {}
+
+int Channel::countOperators() const
+{
+    int count = 0;
+    for (std::map<int, bool>::const_iterator it = members.begin(); it != members.end(); ++it)
+    {
+        if (it->second)
+            count++;
+    }
+    return count;
+}
+
+void Channel::addMember(Client *client, bool asOperator)
+{
+    if (client)
+        members[client->getFd()] = asOperator;
+}
+
+int Channel::getOldestMemberFd() const {
+    if (members.empty())
+        return -1;
+    
+    
+    int oldestFd = -1;
+    for (std::map<int, bool>::const_iterator it = members.begin(); it != members.end(); ++it) {
+        if (oldestFd == -1 || it->first < oldestFd) {
+            oldestFd = it->first;
+        }
+    }
+    return oldestFd;
+}
+
+void Channel::removeUserFromLists(int fd) {
+    
+    members.erase(fd);
+    
+    
+    
+}
+
+void Channel::removeMember(int clientFd, Server &server) {
+    if (!isMember(clientFd))
+        return;
+
+    bool wasOperator = isOperator(clientFd);
+    
+    removeUserFromLists(clientFd);
+
+    if (wasOperator) {
+        bool hasOperators = false;
+        for (std::map<int, bool>::const_iterator it = members.begin(); it != members.end(); ++it) {
+            if (it->second) {
+                hasOperators = true;
+                break;
+            }
+        }
+
+        if (!hasOperators && !members.empty()) {
+            int oldestClientFd = getOldestMemberFd();
+            if (oldestClientFd != -1) {
+                
+                members[oldestClientFd] = true;
+                
+                Client *newAdmin = server.getClientByFd(oldestClientFd);
+                if (newAdmin) {
+                    
+                    std::string serverName = "ft_irc.local"; 
+                    std::string notice = ":" + serverName + " MODE " + name + " +o " + newAdmin->getNickname() + "\r\n";
+                    broadcast(server, notice);
+                }
+            }
+        }
+    }
+}
+
+bool Channel::isMember(int fd) const
+{
+    return members.find(fd) != members.end();
+}
+
+bool Channel::isOperator(int fd) const
+{
+    std::map<int, bool>::const_iterator it = members.find(fd);
+    if (it == members.end())
+        return false;
+    return it->second;
+}
+
+void Channel::setOperator(int fd, bool value)
+{
+    std::map<int, bool>::iterator it = members.find(fd);
+    if (it != members.end())
+        it->second = value;
+}
+
+size_t Channel::memberCount() const
+{
+    return members.size();
+}
+
+const std::map<int, bool> &Channel::getMembers() const
+{
+    return members;
+}
+
+void Channel::invite(int fd)
+{
+    invited.insert(fd);
+}
+
+bool Channel::isInvited(int fd) const
+{
+    return invited.find(fd) != invited.end();
+}
+
+void Channel::removeInvite(int fd)
+{
+    invited.erase(fd);
+}
+
+std::string Channel::getName() const { return name; }
+std::string Channel::getTopic() const { return topic; }
+void Channel::setTopic(const std::string &newTopic) { topic = newTopic; }
+bool Channel::getInviteOnly() const { return inviteOnly; }
+void Channel::setInviteOnly(bool value) { inviteOnly = value; }
+bool Channel::getTopicRestricted() const { return topicRestricted; }
+void Channel::setTopicRestricted(bool value) { topicRestricted = value; }
+std::string Channel::getKey() const { return key; }
+void Channel::setKey(const std::string &newKey) { key = newKey; }
+bool Channel::hasKey() const { return !key.empty(); }
+size_t Channel::getUserLimit() const { return userLimit; }
+void Channel::setUserLimit(size_t limit) { userLimit = limit; }
+bool Channel::hasUserLimit() const { return userLimit > 0; }
+
+bool Channel::isFull() const
+{
+    return hasUserLimit() && memberCount() >= userLimit;
+}
+
+std::string Channel::getMemberList(const Server &server) const
+{
+    std::string memberList;
+
+    for (std::map<int, bool>::const_iterator it = members.begin(); it != members.end(); ++it)
+    {
+        const Client *client = server.getClientByFd(it->first);
+
+        if (!client)
+            continue;
+
+        if (!memberList.empty())
+            memberList += " ";
+
+        if (it->second)
+            memberList += "@";
+
+        memberList += client->getNickname();
+    }
+
+    return memberList;
+}
+
+void Channel::broadcast(Server &server, const std::string &msg, int excludeFd) const
+{
+    std::string message = msg + "\r\n";
+    for (std::map<int, bool>::const_iterator it = members.begin(); it != members.end(); ++it)
+    {
+        if (it->first != excludeFd)
+        {
+            Client *client = server.getClientByFd(it->first);
+            if (client)
+                client->appendToSendBuffer(message);
+        }
+    }
+}
+
+void Channel::broadcast(const std::string &msg, int excludeFd) const
+{
+    
+    std::string message = msg + "\r\n";
+    for (std::map<int, bool>::const_iterator it = members.begin(); it != members.end(); ++it)
+    {
+        if (it->first != excludeFd)
+        {
+            send(it->first, message.c_str(), message.size(), 0);
+        }
+    }
+}
