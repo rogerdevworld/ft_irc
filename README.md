@@ -1,4 +1,3 @@
-```markdown
 *This project has been created as part of the 42 curriculum by rmarrero, aybelhaj.*
 
 # ft_irc
@@ -114,7 +113,5 @@ Modern IRC Client Protocol Documentation — Comprehensive breakdown of real-wor
 
 * [rmarrero](https://www.google.com/search?q=https://profile.intra.42.fr/users/rmarrero)
 * [aybelhaj](https://www.google.com/search?q=https://profile.intra.42.fr/users/aybelhaj)
-
-```
 
 ```
